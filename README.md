@@ -31,8 +31,8 @@ A desktop application that converts resumes into a standardized client format.
 Clone the repository:
 
 ```bash
-git clone https://github.com/Kollakoushik/Resume_parser.git
-cd Resume_parser
+git clone https://github.com/koushik-shimento/Resume_formatter.git
+cd Resume_formatter
 ```
 
 Create a virtual environment:
@@ -150,7 +150,9 @@ Every resume is formatted into the company's standard template containing:
 
 ## PDF export fails
 
-The DOCX is still created.
+The DOCX is still created. PDF conversion now checks only converters that are
+actually available, uses an isolated LibreOffice process to avoid profile-lock
+delays, and reports a clear error when neither converter is installed.
 
 Install one of:
 
