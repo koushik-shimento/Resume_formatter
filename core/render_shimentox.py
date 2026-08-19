@@ -9,10 +9,10 @@ import shutil
 from pathlib import Path
 
 from docx import Document
-from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING, WD_TAB_ALIGNMENT
 from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls, qn
-from docx.shared import Pt, Twips
+from docx.shared import Emu, Pt, Twips
 
 from .model import ResumeData
 
@@ -20,7 +20,6 @@ FONT = "Times New Roman"
 SIZE = Pt(10)
 BULLET_NUM_ID = 4  # the Symbol-bullet list defined in the donor template
 BULLET_INDENT_TWIPS = 144
-RIGHT_TAB_TWIPS = 10466
 
 DISPLAY_NAME = "ShimentoX"
 
@@ -58,9 +57,8 @@ def render(data: ResumeData, out_path: Path) -> Path:
 
     if data.experience:
         _heading(doc, "Professional Experience:")
-        _blank(doc)
         for job in data.experience:
-            p = _para(doc, right_tab=True)
+            p = _para(doc, right_tab=True, keep_with_next=True)
             _run(p, job.company, bold=True)
             if job.dates:
                 _run(p, "\t", bold=True)
@@ -110,9 +108,21 @@ def _set_header_name(doc: Document, name: str) -> None:
     t.set(qn("xml:space"), "preserve")
 
 
-def _para(doc: Document, bullet: bool = False, right_tab: bool = False):
+def _para(
+    doc: Document,
+    bullet: bool = False,
+    right_tab: bool = False,
+    keep_with_next: bool = False,
+):
     p = doc.add_paragraph(style="No Spacing")
-    p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    # Full justification creates visibly stretched headings and short bullets.
+    # The client sample uses a clean left-aligned resume body.
+    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    p.paragraph_format.space_before = Pt(0)
+    p.paragraph_format.space_after = Pt(0)
+    p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
+    p.paragraph_format.keep_with_next = keep_with_next
+    p.paragraph_format.widow_control = True
     if bullet:
         pPr = p._p.get_or_add_pPr()
         pPr.append(parse_xml(
@@ -121,8 +131,10 @@ def _para(doc: Document, bullet: bool = False, right_tab: bool = False):
         ))
         p.paragraph_format.left_indent = Twips(BULLET_INDENT_TWIPS)
     if right_tab:
+        section = doc.sections[-1]
+        right_edge = section.page_width - section.left_margin - section.right_margin
         p.paragraph_format.tab_stops.add_tab_stop(
-            Twips(RIGHT_TAB_TWIPS), WD_TAB_ALIGNMENT.RIGHT
+            Emu(right_edge), WD_TAB_ALIGNMENT.RIGHT
         )
     return p
 
@@ -132,7 +144,7 @@ def _blank(doc: Document) -> None:
 
 
 def _heading(doc: Document, text: str) -> None:
-    _run(_para(doc), text, bold=True)
+    _run(_para(doc, keep_with_next=True), text, bold=True)
 
 
 def _run(p, text: str, bold: bool = False, italic: bool = False):
