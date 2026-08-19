@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -la \"C:\\\\Users\\\\jaanu\\\\OneDrive\\\\Desktop\\\\resume_tool\"; echo \"=== Desktop ===\"; ls -t \"C:\\\\Users\\\\jaanu\\\\OneDrive\\\\Desktop\" 2>/dev/null | head -20; echo \"=== Downloads ===\"; ls -t \"C:\\\\Users\\\\jaanu\\\\Downloads\" 2>/dev/null | head -20)",
+      "Bash(python dump2.py)",
+      "Bash(python dump3.py)",
+      "Bash(python build_template.py)",
+      "Bash(python -c ' *)",
+      "Bash(python roundtrip.py)",
+      "Bash(python render_diff.py)",
+      "Bash(cp \"C:\\\\Users\\\\jaanu\\\\Downloads\\\\Formatted Resume OG 1.docx\" orig.docx)",
+      "PowerShell(Get-Process WINWORD -ErrorAction SilentlyContinue)",
+      "PowerShell(Stop-Process -Force -ErrorAction SilentlyContinue)",
+      "Bash(python -m pip install --quiet pywin32)",
+      "Bash(timeout 120 python -c ' *)",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(python app.py)"
+    ]
+  }
+}
