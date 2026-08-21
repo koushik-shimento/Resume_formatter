@@ -34,6 +34,25 @@ class ParserTests(unittest.TestCase):
                      fallback_name="Jane Doe")
         self.assertEqual(data.name, "Jane Doe")
 
+    def test_repeated_parse_keeps_every_summary_and_skill_entry(self):
+        for iteration in range(1, 21):
+            summaries = [f"Summary {iteration}-{index}" for index in range(1, 6)]
+            skills = [(f"Category {index}", f"Skill {iteration}-{index}")
+                      for index in range(1, 5)]
+            lines = [Line(f"Candidate {iteration}"), Line("Summary")]
+            lines.extend(Line(value, is_bullet=True) for value in summaries)
+            lines.append(Line("Technical Skills"))
+            lines.extend(Line(f"{category}: {value}") for category, value in skills)
+
+            data = parse(lines)
+
+            self.assertEqual(data.summary, summaries, f"summary loss in iteration {iteration}")
+            self.assertEqual(
+                [(group.category, group.values) for group in data.skills],
+                skills,
+                f"skill loss in iteration {iteration}",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -182,6 +182,10 @@ For PDF UAT, run on a Windows machine with Microsoft Word installed or on a
 machine with LibreOffice. Verify that both output files open and that the PDF
 matches the DOCX pagination.
 
+The ShimentoX logo is embedded in the Word template at high resolution with a
+locked aspect ratio. To replace it later, run `scripts/update_template_logo.py`
+with the new PNG and commit both the source asset and updated template.
+
 ## LLM is not used
 
 Check:
