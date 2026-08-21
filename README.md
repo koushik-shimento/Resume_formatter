@@ -73,6 +73,9 @@ python app.py
 
 The GUI will open.
 
+Opening and parsing runs in a background worker so large resumes do not freeze
+the interface. Export also runs in the background.
+
 ---
 
 # Using the application
@@ -160,6 +163,28 @@ Install one of:
 - LibreOffice
 
 and try again.
+
+The generated `.docx` and `.pdf` are saved together in the folder selected in
+the Save dialog. The application opens that folder after export and lists both
+exact filenames in the completion message.
+
+---
+
+# UAT verification
+
+Run the automated regression suite before starting UAT:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+For PDF UAT, run on a Windows machine with Microsoft Word installed or on a
+machine with LibreOffice. Verify that both output files open and that the PDF
+matches the DOCX pagination.
+
+The ShimentoX logo is embedded in the Word template at high resolution with a
+locked aspect ratio. To replace it later, run `scripts/update_template_logo.py`
+with the new PNG and commit both the source asset and updated template.
 
 ## LLM is not used
 
