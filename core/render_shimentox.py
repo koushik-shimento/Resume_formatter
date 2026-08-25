@@ -9,10 +9,11 @@ import shutil
 from pathlib import Path
 
 from docx import Document
+from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT, WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING, WD_TAB_ALIGNMENT
 from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls, qn
-from docx.shared import Emu, Pt, Twips
+from docx.shared import Emu, Inches, Pt, Twips
 
 from .model import ResumeData
 
@@ -36,7 +37,7 @@ def render(data: ResumeData, out_path: Path) -> Path:
     shutil.copyfile(template_path(), out_path)
 
     doc = Document(str(out_path))
-    _set_header_name(doc, data.name)
+    _set_header(doc, data.name)
 
     if data.summary:
         _heading(doc, "Summary:")
@@ -95,17 +96,48 @@ def render(data: ResumeData, out_path: Path) -> Path:
     return out_path
 
 
-def _set_header_name(doc: Document, name: str) -> None:
-    para = doc.sections[0].header.paragraphs[0]
-    runs = para._p.findall(qn("w:r"))
-    if not runs:
-        return
-    t = runs[0].find(qn("w:t"))
-    if t is None:
-        t = parse_xml(f'<w:t {nsdecls("w")} xml:space="preserve"></w:t>')
-        runs[0].append(t)
-    t.text = name
-    t.set(qn("xml:space"), "preserve")
+def _set_header(doc: Document, name: str) -> None:
+    """Build a stable two-column header with the logo flush to the right margin."""
+    from .paths import resource
+
+    section = doc.sections[0]
+    header = section.header
+    for child in list(header._element):
+        header._element.remove(child)
+    usable_width = section.page_width - section.left_margin - section.right_margin
+    table = header.add_table(rows=1, cols=2, width=usable_width)
+    table.autofit = False
+    table.alignment = WD_TABLE_ALIGNMENT.LEFT
+    table._tbl.tblPr.append(parse_xml(
+        f'<w:tblBorders {nsdecls("w")}>'
+        '<w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/>'
+        '<w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/>'
+        '</w:tblBorders>'
+    ))
+
+    left_width = int(usable_width * 0.65)
+    right_width = usable_width - left_width
+    left, right = table.rows[0].cells
+    for cell, width in ((left, left_width), (right, right_width)):
+        cell.width = width
+        cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+        tc_pr = cell._tc.get_or_add_tcPr()
+        tc_pr.append(parse_xml(
+            f'<w:tcMar {nsdecls("w")}><w:top w:w="0" w:type="dxa"/>'
+            '<w:left w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/>'
+            '<w:right w:w="0" w:type="dxa"/></w:tcMar>'
+        ))
+
+    name_paragraph = left.paragraphs[0]
+    name_paragraph.paragraph_format.space_after = Pt(0)
+    _run(name_paragraph, name, bold=True).font.size = Pt(14)
+
+    logo_paragraph = right.paragraphs[0]
+    logo_paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    logo_paragraph.paragraph_format.space_after = Pt(0)
+    logo_paragraph.add_run().add_picture(
+        str(resource("assets/shimento_logo.png")), width=Inches(2.08)
+    )
 
 
 def _para(

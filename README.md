@@ -2,6 +2,21 @@
 
 A desktop application that converts resumes into a standardized client format.
 
+## Release status
+
+The current `main` release is UAT-ready. It includes non-blocking resume parsing,
+verified DOCX and PDF export, a high-resolution ShimentoX logo fixed to the
+top-right header, and regression coverage for supported resume sections.
+
+Validation completed before release:
+
+- 11 automated tests
+- 20 repeated parser iterations for summary and skill retention
+- 20 repeated render iterations covering summary, skills, experience,
+  responsibilities, certifications, and education
+- End-to-end DOCX-to-PDF conversion with LibreOffice
+- GitHub Actions CI
+
 ## Features
 
 - Supports PDF, DOCX, DOC, RTF and TXT resumes
@@ -72,6 +87,9 @@ python app.py
 ```
 
 The GUI will open.
+
+Opening and parsing runs in a background worker so large resumes do not freeze
+the interface. Export also runs in the background.
 
 ---
 
@@ -160,6 +178,28 @@ Install one of:
 - LibreOffice
 
 and try again.
+
+The generated `.docx` and `.pdf` are saved together in the folder selected in
+the Save dialog. The application opens that folder after export and lists both
+exact filenames in the completion message.
+
+---
+
+# UAT verification
+
+Run the automated regression suite before starting UAT:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+For PDF UAT, run on a Windows machine with Microsoft Word installed or on a
+machine with LibreOffice. Verify that both output files open and that the PDF
+matches the DOCX pagination.
+
+The ShimentoX logo is embedded in the Word template at high resolution with a
+locked aspect ratio. To replace it later, run `scripts/update_template_logo.py`
+with the new PNG and commit both the source asset and updated template.
 
 ## LLM is not used
 

@@ -26,6 +26,13 @@ OPEN_TYPES = [
 PAD = 8
 
 
+def load_resume(path: Path) -> ResumeData:
+    """Extract and parse a resume without touching the Tk event loop."""
+    lines = extract.extract(str(path))
+    fallback = path.stem.replace("_", " ").replace("-", " ")
+    return parser.parse(lines, fallback_name=fallback)
+
+
 class App(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
@@ -48,7 +55,8 @@ class App(tk.Tk):
         bar = ttk.Frame(self, padding=(PAD, PAD, PAD, 0))
         bar.pack(fill="x")
 
-        ttk.Button(bar, text="Open resume…", command=self.on_open).pack(side="left")
+        self.open_btn = ttk.Button(bar, text="Open resume…", command=self.on_open)
+        self.open_btn.pack(side="left")
         ttk.Label(bar, text="  Client format:").pack(side="left")
         self.client_var = tk.StringVar(value=clients.names()[0])
         ttk.Combobox(
@@ -273,28 +281,46 @@ class App(tk.Tk):
         if not path:
             return
         self.source_path = Path(path)
+        self.open_btn.configure(state="disabled")
+        self.export_btn.configure(state="disabled")
         self._set_status(f"Reading {self.source_path.name} …")
+        threading.Thread(
+            target=self._open_worker, args=(self.source_path,), daemon=True
+        ).start()
+
+    def _open_worker(self, path: Path) -> None:
         try:
-            lines = extract.extract(path)
-            fallback = self.source_path.stem.replace("_", " ").replace("-", " ")
-            self.data = parser.parse(lines, fallback_name=fallback)
+            data = load_resume(path)
         except extract.UnsupportedFormat as exc:
-            self._set_status("Could not read that file.")
-            messagebox.showwarning("Unsupported file", str(exc))
+            detail = str(exc)
+            self.after(0, lambda: self._open_failed("Unsupported file", detail, True))
             return
         except Exception:
-            self._set_status("Could not read that file.")
-            messagebox.showerror("Error reading file", traceback.format_exc(limit=3))
+            detail = traceback.format_exc(limit=3)
+            self.after(0, lambda: self._open_failed("Error reading file", detail, False))
             return
 
-        self._populate(self.data)
-        self.source_label.configure(text=self.source_path.name, foreground="#000")
+        self.after(0, lambda: self._open_done(path, data))
+
+    def _open_done(self, path: Path, data: ResumeData) -> None:
+        self.data = data
+        self._populate(data)
+        self.source_label.configure(text=path.name, foreground="#000")
+        self.open_btn.configure(state="normal")
         self.export_btn.configure(state="normal")
         found = (
-            f"{len(self.data.experience)} roles, {len(self.data.skills)} skill groups, "
-            f"{len(self.data.summary)} summary points"
+            f"{len(data.experience)} roles, {len(data.skills)} skill groups, "
+            f"{len(data.summary)} summary points"
         )
         self._set_status(f"Loaded {found}. Review every tab before exporting.")
+
+    def _open_failed(self, title: str, detail: str, warning: bool) -> None:
+        self.open_btn.configure(state="normal")
+        self._set_status("Could not read that file.")
+        if warning:
+            messagebox.showwarning(title, detail)
+        else:
+            messagebox.showerror(title, detail)
 
     def on_export(self) -> None:
         data = self._collect()
@@ -330,25 +356,29 @@ class App(tk.Tk):
 
         self.after(0, lambda: self._set_status("Converting to PDF …"))
         pdf_error = ""
+        pdf_path = None
         try:
-            to_pdf(docx_path)
+            pdf_path = to_pdf(docx_path)
         except PdfExportError as exc:
             pdf_error = str(exc)
         except Exception as exc:
             pdf_error = str(exc)
 
-        self.after(0, lambda: self._export_done(docx_path, pdf_error))
+        self.after(0, lambda: self._export_done(docx_path, pdf_path, pdf_error))
 
-    def _export_done(self, docx_path: Path, pdf_error: str) -> None:
+    def _export_done(
+        self, docx_path: Path, pdf_path: Path | None, pdf_error: str
+    ) -> None:
         self.export_btn.configure(state="normal")
         if pdf_error:
             self._set_status(f"Saved {docx_path.name} (PDF failed).")
             messagebox.showwarning("Saved, but PDF failed", pdf_error)
         else:
-            self._set_status(f"Saved {docx_path.name} and {docx_path.stem}.pdf")
+            assert pdf_path is not None
+            self._set_status(f"Saved {docx_path.name} and {pdf_path.name}")
             messagebox.showinfo(
                 "Done", f"Saved to:\n{docx_path.parent}\n\n"
-                f"{docx_path.name}\n{docx_path.stem}.pdf"
+                f"{docx_path.name}\n{pdf_path.name}"
             )
         try:
             os.startfile(docx_path.parent)
