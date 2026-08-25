@@ -37,6 +37,15 @@ def render(data: ResumeData, out_path: Path) -> Path:
     shutil.copyfile(template_path(), out_path)
 
     doc = Document(str(out_path))
+    # The approved PDF is US Letter with 0.5-inch margins. The old donor file
+    # was A4, which changed wrapping and page breaks even when the text matched.
+    for section in doc.sections:
+        section.page_width = Inches(8.5)
+        section.page_height = Inches(11)
+        section.left_margin = Inches(0.5)
+        section.right_margin = Inches(0.5)
+        section.top_margin = Inches(0.5)
+        section.bottom_margin = Inches(0.5)
     _set_header(doc, data.name)
 
     if data.summary:
@@ -136,7 +145,7 @@ def _set_header(doc: Document, name: str) -> None:
     logo_paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
     logo_paragraph.paragraph_format.space_after = Pt(0)
     logo_paragraph.add_run().add_picture(
-        str(resource("assets/shimento_logo.png")), width=Inches(2.08)
+        str(resource("assets/shimento_logo.png")), width=Inches(1.56)
     )
 
 
@@ -176,7 +185,10 @@ def _blank(doc: Document) -> None:
 
 
 def _heading(doc: Document, text: str) -> None:
-    _run(_para(doc, keep_with_next=True), text, bold=True)
+    # The approved Shimento resume uses a consistent bold-italic treatment for
+    # every top-level section label. Keep this explicit instead of relying on
+    # the donor document's theme, which varies between Word and LibreOffice.
+    _run(_para(doc, keep_with_next=True), text, bold=True, italic=True)
 
 
 def _run(p, text: str, bold: bool = False, italic: bool = False):

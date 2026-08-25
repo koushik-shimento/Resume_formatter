@@ -9,7 +9,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from core import extract, parser
+from core import extract, llm_normalizer, parser
 from core.export import PdfExportError, to_pdf
 from core.model import Education, Job, ResumeData, SkillGroup
 from core.render_shimentox import render
@@ -28,7 +28,11 @@ def parse_upload(name: str, content: bytes) -> ResumeData:
         path.write_bytes(content)
         lines = extract.extract(str(path))
     fallback = Path(name).stem.replace("_", " ").replace("-", " ")
-    return parser.parse(lines, fallback_name=fallback)
+    parsed = parser.parse(lines, fallback_name=fallback)
+    if llm_normalizer.configured():
+        raw_text = "\n".join(line.text for line in lines)
+        return llm_normalizer.normalize(raw_text, fallback=parsed)
+    return parsed
 
 
 def build_outputs(data: ResumeData) -> tuple[str, bytes, str, bytes]:
