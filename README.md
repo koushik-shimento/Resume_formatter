@@ -1,6 +1,6 @@
 # Resume Parser
 
-A desktop application that converts resumes into a standardized client format.
+A desktop and browser application that converts resumes into a standardized client format.
 
 ## Release status
 
@@ -87,6 +87,25 @@ python app.py
 ```
 
 The GUI will open.
+
+## Browser version
+
+Run locally:
+
+```bash
+streamlit run web_app.py
+```
+
+The browser version accepts PDF, DOCX, RTF, and TXT uploads, provides a review
+screen for every supported section, and generates DOCX and PDF downloads. The
+Docker image includes LibreOffice, so hosted PDF conversion does not depend on
+software installed on the user's computer.
+
+### Render deployment
+
+The included `render.yaml` and `Dockerfile` define the complete web service.
+Connect this repository as a Render Blueprint to deploy it. Render redeploys
+the service automatically whenever `main` changes.
 
 Opening and parsing runs in a background worker so large resumes do not freeze
 the interface. Export also runs in the background.
