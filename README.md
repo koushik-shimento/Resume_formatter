@@ -2,6 +2,21 @@
 
 A desktop application that converts resumes into a standardized client format.
 
+## Release status
+
+The current `main` release is UAT-ready. It includes non-blocking resume parsing,
+verified DOCX and PDF export, a high-resolution ShimentoX logo fixed to the
+top-right header, and regression coverage for supported resume sections.
+
+Validation completed before release:
+
+- 11 automated tests
+- 20 repeated parser iterations for summary and skill retention
+- 20 repeated render iterations covering summary, skills, experience,
+  responsibilities, certifications, and education
+- End-to-end DOCX-to-PDF conversion with LibreOffice
+- GitHub Actions CI
+
 ## Features
 
 - Supports PDF, DOCX, DOC, RTF and TXT resumes
