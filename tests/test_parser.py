@@ -5,6 +5,41 @@ from core.parser import parse
 
 
 class ParserTests(unittest.TestCase):
+    def test_parses_branded_project_card_resume(self):
+        lines = [
+            Line("ASIT KUMAR MANDAL", bold=True, size=23),
+            Line("⚡ PROFESSIONAL SUMMARY — AI ARCHITECT PROFILE", bold=True, size=11),
+            Line("Enterprise architect", is_bullet=True),
+            Line("🧠 CORE AI CAPABILITIES & TECHNICAL SKILLS", bold=True, size=11),
+            Line("Cloud Platforms: AWS, Azure"),
+            Line("💼 FEATURED PROJECTS — AI-ENABLED ARCHITECTURE", bold=True, size=11),
+            Line("PROJECT 1 ▸ Verizon OSS Modernization", bold=True, size=11),
+            Line("Client: Verizon (Infinite Computer Solutions) Role: Senior Solution Architect  Period: Jul 2025 – Present"),
+            Line("Tech Stack: AWS · LangChain"),
+            Line("Built the modernization platform", is_bullet=True),
+            Line("📊 EARLIER CAREER", bold=True, size=11),
+            Line("Team Lead — E2E Provisioning | Tech Mahindra", bold=True),
+            Line("Feb 2012 – Apr 2015"),
+            Line("Activation System Design"),
+            Line("🎓 EDUCATION & CERTIFICATIONS", bold=True, size=11),
+            Line("🎓 Education", bold=True),
+            Line("MCA — Utkal University, Orissa", is_bullet=True),
+            Line("🏆 Certifications & Training", bold=True),
+            Line("AWS Certified Solution Architect", is_bullet=True),
+        ]
+
+        data = parse(lines)
+
+        self.assertEqual(data.summary, ["Enterprise architect"])
+        self.assertEqual(data.skills[0].category, "Cloud Platforms")
+        self.assertEqual(len(data.experience), 2)
+        self.assertEqual(data.experience[0].company, "Infinite Computer Solutions")
+        self.assertEqual(data.experience[0].title, "Senior Solution Architect")
+        self.assertIn("AWS · LangChain", data.experience[0].project)
+        self.assertEqual(data.experience[1].company, "Tech Mahindra")
+        self.assertTrue(data.education)
+        self.assertEqual(data.certifications, ["AWS Certified Solution Architect"])
+
     def test_splits_two_column_inline_section_headings(self):
         lines = [
             Line("Asit Kumar Mandal", bold=True, size=18),
