@@ -5,6 +5,32 @@ from core.parser import parse
 
 
 class ParserTests(unittest.TestCase):
+    def test_splits_two_column_inline_section_headings(self):
+        lines = [
+            Line("Asit Kumar Mandal", bold=True, size=18),
+            Line("Professional Summary | Cloud engineer with AWS experience"),
+            Line("Technical Skills | Cloud: AWS, Bedrock"),
+            Line("Professional Experience | Example Ltd  Jan 2022 - Present"),
+            Line("Cloud Engineer"),
+            Line("Built reliable services", is_bullet=True),
+            Line("Education"),
+            Line("MCA | Utkal University | 2020"),
+            Line("B.Sc | Rajendra College | 2017 | 🏆 Certifications & Training |"),
+            Line("AWS Certified Solutions Architect - Associate"),
+        ]
+
+        data = parse(lines)
+
+        self.assertEqual(data.name, "Asit Kumar Mandal")
+        self.assertIn("Cloud engineer with AWS experience", data.summary)
+        self.assertEqual(data.skills[0].category, "Cloud")
+        self.assertEqual(data.experience[0].company, "Example Ltd")
+        self.assertTrue(data.education)
+        self.assertEqual(
+            data.certifications,
+            ["AWS Certified Solutions Architect - Associate"],
+        )
+
     def test_parses_expected_resume_sections(self):
         lines = [
             Line("Koushik Kolla", bold=True, size=18),
