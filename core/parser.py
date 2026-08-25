@@ -52,7 +52,8 @@ _register(
     "certifications",
     "certifications", "certification", "certificates", "certificate",
     "licenses", "licenses and certifications", "licences", "courses",
-    "certifications and training", "training", "trainings", "professional development",
+    "certifications and training", "certifications & training", "training", "trainings",
+    "professional development",
 )
 _register(
     "education",
@@ -123,8 +124,57 @@ def _heading_of(line: Line) -> str | None:
     return _SECTION_ALIASES.get(_norm_heading(text))
 
 
+def _explode_inline_headings(lines: list[Line]) -> list[Line]:
+    """Split headings that PDF extraction joined to neighbouring columns.
+
+    Two-column resumes commonly produce rows such as
+    ``B.Sc | College | 🏆 Certifications & Training |``.  Treating that as one
+    education line makes every later certification look like education.  A
+    heading is split only at the start of a line or after a strong visual
+    delimiter, which avoids turning prose such as "five years of experience"
+    into a section boundary.
+    """
+    # Ignore-only headings such as "Languages" are also legitimate skill
+    # categories ("Languages: Python, SQL"), so never split those inline.
+    aliases = sorted(
+        (alias for alias, section in _SECTION_ALIASES.items() if section != "ignore"),
+        key=len,
+        reverse=True,
+    )
+    alias_pattern = "|".join(re.escape(alias) for alias in aliases)
+    marker = re.compile(
+        rf"(?i)(?P<prefix>^|[|•·▪◦])\s*[^\w\s|]{{0,3}}\s*"
+        rf"(?P<heading>{alias_pattern})(?=\s*(?:[:|•·▪◦]|$))"
+    )
+    expanded: list[Line] = []
+    for line in lines:
+        if _heading_of(line):
+            expanded.append(line)
+            continue
+        text = line.text.strip()
+        matches = list(marker.finditer(text))
+        if not matches:
+            expanded.append(line)
+            continue
+
+        cursor = 0
+        for match in matches:
+            prefix_start = match.start("prefix")
+            before = text[cursor:prefix_start].strip(" |•·▪◦")
+            if before:
+                expanded.append(Line(before, line.is_bullet, line.bold, line.size))
+            heading = match.group("heading").strip()
+            expanded.append(Line(heading, False, True, line.size))
+            cursor = match.end()
+        tail = text[cursor:].strip(" :|•·▪◦")
+        if tail:
+            expanded.append(Line(tail, line.is_bullet, line.bold, line.size))
+    return expanded
+
+
 def parse(lines: list[Line], fallback_name: str = "") -> ResumeData:
     data = ResumeData()
+    lines = _explode_inline_headings(lines)
     blocks: list[tuple[str, str, list[Line]]] = [("_preamble", "", [])]
     for line in lines:
         section = _heading_of(line)
