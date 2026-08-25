@@ -49,6 +49,12 @@ _register(
     "project experience", "project details", "notable projects", "major projects",
 )
 _register(
+    "featured_projects",
+    "featured projects", "featured projects ai enabled architecture",
+    "featured projects ai architecture",
+)
+_register("earlier_career", "earlier career")
+_register(
     "certifications",
     "certifications", "certification", "certificates", "certificate",
     "licenses", "licenses and certifications", "licences", "courses",
@@ -69,6 +75,7 @@ _register(
     "personal information", "declaration", "references", "reference",
     "publications", "patents", "volunteer experience", "strengths",
     "contact", "contact details", "contact information",
+    "education and certifications", "education & certifications",
 )
 
 _MONTH = r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?"
@@ -119,9 +126,33 @@ def _heading_of(line: Line) -> str | None:
     if line.is_bullet:
         return None
     text = line.text.strip()
-    if len(text.split()) > 6 or len(text) > 60:
+    # Decorative icons and descriptor suffixes make branded section headings
+    # longer than conventional headings; visual-strength checks below keep the
+    # relaxed limit from matching ordinary prose.
+    if len(text.split()) > 12 or len(text) > 100:
         return None
-    return _SECTION_ALIASES.get(_norm_heading(text))
+    norm = _norm_heading(text)
+    exact = _SECTION_ALIASES.get(norm)
+    if exact:
+        return exact
+
+    # Branded resumes often extend a conventional heading with a descriptor,
+    # e.g. "PROFESSIONAL SUMMARY — AI ARCHITECT PROFILE" or
+    # "CORE AI CAPABILITIES & TECHNICAL SKILLS". Only apply fuzzy matching to
+    # visually strong headings so ordinary prose cannot become a section.
+    letters = [char for char in text if char.isalpha()]
+    uppercase_ratio = (
+        sum(char.isupper() for char in letters) / len(letters) if letters else 0
+    )
+    visually_strong = bool(line.bold and (line.size and line.size >= 10.5 or uppercase_ratio >= 0.75))
+    if visually_strong:
+        aliases = sorted(_SECTION_ALIASES, key=len, reverse=True)
+        for alias in aliases:
+            if len(alias.split()) < 2:
+                continue
+            if norm.startswith(alias + " ") or norm.endswith(" " + alias):
+                return _SECTION_ALIASES[alias]
+    return None
 
 
 def _explode_inline_headings(lines: list[Line]) -> list[Line]:
@@ -144,7 +175,7 @@ def _explode_inline_headings(lines: list[Line]) -> list[Line]:
     alias_pattern = "|".join(re.escape(alias) for alias in aliases)
     marker = re.compile(
         rf"(?i)(?P<prefix>^|[|•·▪◦])\s*[^\w\s|]{{0,3}}\s*"
-        rf"(?P<heading>{alias_pattern})(?=\s*(?:[:|•·▪◦]|$))"
+        rf"(?P<heading>{alias_pattern})(?=\s*(?:[|•·▪◦]|$))"
     )
     expanded: list[Line] = []
     for line in lines:
@@ -192,6 +223,8 @@ def parse(lines: list[Line], fallback_name: str = "") -> ResumeData:
     data.skills = _parse_skills(merged.get("skills", []))
     data.experience = _parse_experience(merged.get("experience", []))
     data.experience += _parse_projects(merged.get("projects", []))
+    data.experience += _parse_featured_projects(merged.get("featured_projects", []))
+    data.experience += _parse_earlier_career(merged.get("earlier_career", []))
     data.certifications = _parse_simple_list(merged.get("certifications", []))
     data.education = _parse_education(merged.get("education", []))
 
@@ -276,7 +309,9 @@ def _parse_skills(lines: list[Line]) -> list[SkillGroup]:
     for line in lines:
         text = line.text.strip()
         head, sep, tail = text.partition(":")
-        if sep and 0 < len(head.split()) <= 5 and not head.strip().endswith("."):
+        if line.bold and line.size is None and not sep and len(text.split()) <= 8:
+            groups.append(SkillGroup(text, ""))
+        elif sep and 0 < len(head.split()) <= 5 and not head.strip().endswith("."):
             groups.append(SkillGroup(head.strip(), tail.strip()))
         elif groups:
             joiner = " " if groups[-1].values.endswith(",") else ", "
@@ -390,6 +425,71 @@ def _parse_projects(lines: list[Line]) -> list[Job]:
             current = Job(project="", bullets=[text])
             jobs.append(current)
     return [j for j in jobs if j.project or j.bullets]
+
+
+_FEATURED_PROJECT = re.compile(r"^PROJECT\s+\d+\s*[▸>:\-–—]*\s*(.+)$", re.I)
+_PROJECT_META = re.compile(
+    r"^Client:\s*(?P<client>.*?)\s+Role:\s*(?P<role>.*?)\s+Period:\s*(?P<period>.+)$",
+    re.I,
+)
+
+
+def _parse_featured_projects(lines: list[Line]) -> list[Job]:
+    """Convert project-card resumes into the standard employment structure."""
+    starts = [i for i, line in enumerate(lines) if _FEATURED_PROJECT.match(line.text)]
+    jobs: list[Job] = []
+    for number, start in enumerate(starts):
+        end = starts[number + 1] if number + 1 < len(starts) else len(lines)
+        block = lines[start:end]
+        header = _FEATURED_PROJECT.match(block[0].text)
+        job = Job(project=header.group(1).strip() if header else block[0].text.strip())
+
+        body_start = 1
+        if len(block) > 1:
+            meta = _PROJECT_META.match(block[1].text.strip())
+            if meta:
+                client = meta.group("client").strip()
+                employer = re.search(r"\(([^()]+)\)\s*$", client)
+                job.company = employer.group(1).strip() if employer else client
+                job.title = meta.group("role").strip()
+                job.dates = meta.group("period").strip()
+                body_start = 2
+
+        for line in block[body_start:]:
+            text = line.text.strip()
+            if text.lower().startswith("tech stack:"):
+                stack = text.split(":", 1)[1].strip()
+                if stack:
+                    job.project = f"{job.project}; {stack}"
+            elif line.is_bullet:
+                job.bullets.append(text)
+        if job.company or job.title or job.project or job.bullets:
+            jobs.append(job)
+    return jobs
+
+
+def _parse_earlier_career(lines: list[Line]) -> list[Job]:
+    """Parse compact title/company, date, description triplets."""
+    jobs: list[Job] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if not line.bold or "|" not in line.text:
+            index += 1
+            continue
+        title, company = (part.strip() for part in line.text.split("|", 1))
+        job = Job(company=company, title=title)
+        if index + 1 < len(lines) and DATE_RANGE.search(lines[index + 1].text):
+            job.dates = lines[index + 1].text.strip()
+            index += 1
+        if index + 1 < len(lines):
+            candidate = lines[index + 1]
+            if not candidate.bold and not DATE_RANGE.search(candidate.text):
+                job.project = candidate.text.strip()
+                index += 1
+        jobs.append(job)
+        index += 1
+    return jobs
 
 
 def _parse_simple_list(lines: list[Line]) -> list[str]:
