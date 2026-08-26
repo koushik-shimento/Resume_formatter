@@ -37,8 +37,9 @@ Rules:
 - Preserve employer names, dates, titles, projects, degree names, certifications, and technologies.
 - Normalize dates to MM/YY only when the source supports the month/year; otherwise preserve the source value.
 - Use 5-7 summary bullets when sufficient source material exists; first bullet should state role, experience, and domains.
-- Group actual technologies under: Frontend, Backend, Architecture, Real-Time & Messaging, State Management, Performance Optimization, DevOps & Cloud, Testing, Databases, Tools, AI-Assisted Development as applicable.
+- Use the approved Shimento skill taxonomy when supported by the source: AI & Agentic Frameworks; LLMs & Machine Learning; Vector Databases & Embeddings; Cloud Platforms; Migration & Infrastructure as Code; DevOps & Containers; Data & Analytics; Telecom & Network; Programming; Frameworks & Practices. Omit empty categories and do not duplicate a technology across categories unless the source explicitly requires it.
 - Experience is reverse chronological. Responsibility bullets are concise, single-sentence, and start with an action verb unless preserving a current-role statement requires present tense.
+- Remove exact and near-duplicate summary and responsibility bullets while preserving every distinct fact.
 - Do not create measurable impact unless it appears in the source.
 - Strip contact/address/photos/marital status/age and similar personal details.
 - Do not use first-person pronouns.

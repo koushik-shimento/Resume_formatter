@@ -9,7 +9,6 @@ import shutil
 from pathlib import Path
 
 from docx import Document
-from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT, WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING, WD_TAB_ALIGNMENT
 from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls, qn
@@ -37,6 +36,20 @@ def render(data: ResumeData, out_path: Path) -> Path:
     shutil.copyfile(template_path(), out_path)
 
     doc = Document(str(out_path))
+    # The approved PDF is US Letter with 0.5-inch margins. The old donor file
+    # was A4, which changed wrapping and page breaks even when the text matched.
+    for section in doc.sections:
+        section.page_width = Inches(8.5)
+        section.page_height = Inches(11)
+        section.left_margin = Inches(0.5)
+        section.right_margin = Inches(0.5)
+        # LibreOffice can place a paragraph that continues across a page break
+        # underneath a tall table header when the body margin is only 0.5 in.
+        # Reserve explicit clearance for the repeated name/logo header on every
+        # page so continuation lines are never hidden or clipped.
+        section.top_margin = Inches(0.82)
+        section.bottom_margin = Inches(0.5)
+        section.header_distance = Inches(0.22)
     _set_header(doc, data.name)
 
     if data.summary:
@@ -92,6 +105,14 @@ def render(data: ResumeData, out_path: Path) -> Path:
                 _run(p, "\t")
                 _run(p, edu.year, bold=True, italic=True)
 
+    for section in data.additional_sections:
+        if not section.items:
+            continue
+        _blank(doc)
+        _heading(doc, section.title.rstrip(":") + ":")
+        for item in section.items:
+            _run(_para(doc, bullet=True), item)
+
     doc.save(str(out_path))
     return out_path
 
@@ -101,43 +122,28 @@ def _set_header(doc: Document, name: str) -> None:
     from .paths import resource
 
     section = doc.sections[0]
-    header = section.header
+    # Use one shared header for every page. Explicit even-page image headers
+    # are inconsistently rendered by some LibreOffice versions.
+    doc.settings.odd_and_even_pages_header_footer = False
+    section.different_first_page_header_footer = False
+    _populate_header(
+        section.header, section, name, resource("assets/shimento_logo.png")
+    )
+
+
+def _populate_header(header, section, name: str, logo_path: Path) -> None:
     for child in list(header._element):
         header._element.remove(child)
     usable_width = section.page_width - section.left_margin - section.right_margin
-    table = header.add_table(rows=1, cols=2, width=usable_width)
-    table.autofit = False
-    table.alignment = WD_TABLE_ALIGNMENT.LEFT
-    table._tbl.tblPr.append(parse_xml(
-        f'<w:tblBorders {nsdecls("w")}>'
-        '<w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/>'
-        '<w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/>'
-        '</w:tblBorders>'
-    ))
-
-    left_width = int(usable_width * 0.65)
-    right_width = usable_width - left_width
-    left, right = table.rows[0].cells
-    for cell, width in ((left, left_width), (right, right_width)):
-        cell.width = width
-        cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
-        tc_pr = cell._tc.get_or_add_tcPr()
-        tc_pr.append(parse_xml(
-            f'<w:tcMar {nsdecls("w")}><w:top w:w="0" w:type="dxa"/>'
-            '<w:left w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/>'
-            '<w:right w:w="0" w:type="dxa"/></w:tcMar>'
-        ))
-
-    name_paragraph = left.paragraphs[0]
-    name_paragraph.paragraph_format.space_after = Pt(0)
-    _run(name_paragraph, name, bold=True).font.size = Pt(14)
-
-    logo_paragraph = right.paragraphs[0]
-    logo_paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    logo_paragraph.paragraph_format.space_after = Pt(0)
-    logo_paragraph.add_run().add_picture(
-        str(resource("assets/shimento_logo.png")), width=Inches(2.08)
+    paragraph = header.add_paragraph()
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    paragraph.paragraph_format.space_after = Pt(0)
+    paragraph.paragraph_format.tab_stops.add_tab_stop(
+        Emu(usable_width), WD_TAB_ALIGNMENT.RIGHT
     )
+    _run(paragraph, name, bold=True).font.size = Pt(14)
+    paragraph.add_run("\t")
+    paragraph.add_run().add_picture(str(logo_path), width=Inches(1.56))
 
 
 def _para(
@@ -154,6 +160,11 @@ def _para(
     p.paragraph_format.space_after = Pt(0)
     p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
     p.paragraph_format.keep_with_next = keep_with_next
+    # LibreOffice may restart a paragraph that is split across pages above the
+    # body margin, painting its continuation underneath the repeated header.
+    # Resume bullets are short enough to keep intact and must never obscure the
+    # candidate name or logo.
+    p.paragraph_format.keep_together = bullet
     p.paragraph_format.widow_control = True
     if bullet:
         pPr = p._p.get_or_add_pPr()
@@ -176,7 +187,10 @@ def _blank(doc: Document) -> None:
 
 
 def _heading(doc: Document, text: str) -> None:
-    _run(_para(doc, keep_with_next=True), text, bold=True)
+    # The approved Shimento resume uses a consistent bold-italic treatment for
+    # every top-level section label. Keep this explicit instead of relying on
+    # the donor document's theme, which varies between Word and LibreOffice.
+    _run(_para(doc, keep_with_next=True), text, bold=True, italic=True)
 
 
 def _run(p, text: str, bold: bool = False, italic: bool = False):

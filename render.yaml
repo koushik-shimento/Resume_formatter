@@ -1,0 +1,8 @@
+services:
+  - type: web
+    name: shimentox-resume-formatter
+    runtime: docker
+    plan: free
+    autoDeploy: true
+    healthCheckPath: /_stcore/health
+    dockerfilePath: ./Dockerfile

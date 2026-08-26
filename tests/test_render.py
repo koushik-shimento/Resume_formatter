@@ -1,38 +1,37 @@
 import shutil
 import tempfile
 import unittest
-import zipfile
 from pathlib import Path
-from xml.etree import ElementTree as ET
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from PIL import Image
 
-from core.model import Education, Job, ResumeData, SkillGroup
+from core.model import Education, ExtraSection, Job, ResumeData, SkillGroup
 from core.export import to_pdf
 from core.render_shimentox import render
 
 
 class RenderTests(unittest.TestCase):
-    def test_template_embeds_high_resolution_aspect_correct_logo(self):
-        template = Path(__file__).parents[1] / "templates" / "shimentox.docx"
-        with zipfile.ZipFile(template) as archive:
-            image = archive.read("word/media/image1.png")
-            header = ET.fromstring(archive.read("word/header1.xml"))
-
-        width = int.from_bytes(image[16:20], "big")
-        height = int.from_bytes(image[20:24], "big")
-        namespace = {
-            "wp": "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
-        }
-        extent = header.find(".//wp:extent", namespace)
-        self.assertIsNotNone(extent)
-        self.assertGreaterEqual(width, 1000)
-        self.assertAlmostEqual(
-            int(extent.attrib["cx"]) / int(extent.attrib["cy"]),
-            width / height,
-            places=2,
+    def test_additional_sections_are_rendered_without_loss(self):
+        data = ResumeData(
+            name="Jane Doe",
+            summary=["Engineer"],
+            additional_sections=[ExtraSection("Languages", ["English, Hindi"])],
         )
+        with tempfile.TemporaryDirectory() as directory:
+            output = render(data, Path(directory) / "resume.docx")
+            document = Document(output)
+        body = "\n".join(paragraph.text for paragraph in document.paragraphs)
+        self.assertIn("Languages:", body)
+        self.assertIn("English, Hindi", body)
+
+    def test_approved_logo_asset_has_white_background_and_exact_ratio(self):
+        asset = Path(__file__).parents[1] / "assets" / "shimento_logo.png"
+        with Image.open(asset) as image:
+            self.assertEqual(image.size, (938, 163))
+            corner = image.convert("RGB").getpixel((0, 0))
+        self.assertTrue(all(channel >= 245 for channel in corner))
 
     def test_render_preserves_content_and_client_layout(self):
         data = ResumeData(
@@ -49,10 +48,8 @@ class RenderTests(unittest.TestCase):
             document = Document(output)
             body = "\n".join(p.text for p in document.paragraphs)
             header = " ".join(
-                cell.text
-                for table in document.sections[0].header.tables
-                for row in table.rows
-                for cell in row.cells
+                paragraph.text
+                for paragraph in document.sections[0].header.paragraphs
             )
 
         self.assertIn("Jane Doe", header)
@@ -61,6 +58,36 @@ class RenderTests(unittest.TestCase):
             self.assertIn(expected, body)
         self.assertTrue(all(p.paragraph_format.space_after.pt == 0
                             for p in document.paragraphs if p.paragraph_format.space_after))
+        section = document.sections[0]
+        self.assertAlmostEqual(section.page_width / 914400, 8.5, places=2)
+        self.assertAlmostEqual(section.page_height / 914400, 11, places=2)
+        self.assertGreaterEqual(section.top_margin / 914400, 0.8)
+        self.assertLessEqual(section.header_distance / 914400, 0.25)
+
+    def test_section_headings_are_times_new_roman_bold_italic(self):
+        data = ResumeData(
+            name="Jane Doe",
+            summary=["Summary item"],
+            skills=[SkillGroup("Languages", "Python")],
+            experience=[Job(company="Example Ltd")],
+            certifications=["Cloud Practitioner"],
+            education=[Education("B.Tech", "Example University", "2022")],
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            output = render(data, Path(directory) / "resume.docx")
+            document = Document(output)
+
+        expected = {
+            "Summary:", "Technical Skills:", "Professional Experience:",
+            "Certifications:", "Education:",
+        }
+        headings = {paragraph.text: paragraph.runs[0] for paragraph in document.paragraphs
+                    if paragraph.text in expected}
+        self.assertEqual(set(headings), expected)
+        for run in headings.values():
+            self.assertTrue(run.bold)
+            self.assertTrue(run.italic)
+            self.assertEqual(run.font.name, "Times New Roman")
 
     def test_repeated_render_keeps_all_supported_resume_data(self):
         for iteration in range(1, 21):
@@ -94,11 +121,18 @@ class RenderTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             output = render(ResumeData(name="Header Check"), Path(directory) / "resume.docx")
             document = Document(output)
-            header = document.sections[0].header
-            self.assertEqual(len(header.tables), 1)
-            right_paragraph = header.tables[0].cell(0, 1).paragraphs[0]
-            self.assertEqual(right_paragraph.alignment, WD_ALIGN_PARAGRAPH.RIGHT)
-            self.assertEqual(len(right_paragraph._p.xpath(".//a:blip")), 1)
+            section = document.sections[0]
+            self.assertFalse(document.settings.odd_and_even_pages_header_footer)
+            self.assertFalse(section.different_first_page_header_footer)
+            header = section.header
+            self.assertIn("Header Check", " ".join(p.text for p in header.paragraphs))
+            picture_paragraphs = [p for p in header.paragraphs
+                                  if p._p.xpath(".//a:blip")]
+            self.assertEqual(len(picture_paragraphs), 1)
+            self.assertEqual(picture_paragraphs[0].alignment,
+                             WD_ALIGN_PARAGRAPH.LEFT)
+            extent = picture_paragraphs[0]._p.xpath(".//wp:extent")[0]
+            self.assertAlmostEqual(int(extent.get("cx")) / 914400, 1.56, places=2)
 
     @unittest.skipUnless(shutil.which("soffice"), "LibreOffice is not installed")
     def test_end_to_end_docx_and_pdf_export(self):
