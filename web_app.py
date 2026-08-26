@@ -9,10 +9,11 @@ from pathlib import Path
 
 import streamlit as st
 
-from core import extract, llm_normalizer, parser
+from core import extract, parser
 from core.export import PdfExportError, to_pdf
-from core.model import Education, Job, ResumeData, SkillGroup
+from core.model import Education, ExtraSection, Job, ResumeData, SkillGroup
 from core.render_shimentox import render
+from core.validation import validate
 
 
 SUPPORTED_TYPES = ["pdf", "docx", "rtf", "txt"]
@@ -29,9 +30,10 @@ def parse_upload(name: str, content: bytes) -> ResumeData:
         lines = extract.extract(str(path))
     fallback = Path(name).stem.replace("_", " ").replace("-", " ")
     parsed = parser.parse(lines, fallback_name=fallback)
-    if llm_normalizer.configured():
-        raw_text = "\n".join(line.text for line in lines)
-        return llm_normalizer.normalize(raw_text, fallback=parsed)
+    # Resume contents stay on this server. Do not send candidate data to an
+    # external LLM implicitly; deterministic extraction plus review/validation
+    # is safer for personal information and reproducible in UAT.
+    parsed.validation_errors, parsed.validation_warnings = validate(parsed, lines)
     return parsed
 
 
@@ -70,6 +72,10 @@ def _load_editor(data: ResumeData) -> None:
     st.session_state.education = "\n".join(
         " | ".join((edu.degree, edu.institution, edu.year)) for edu in data.education
     )
+    st.session_state.additional_sections = "\n\n".join(
+        f"[{section.title}]\n" + "\n".join(section.items)
+        for section in data.additional_sections
+    )
     st.session_state.pop("outputs", None)
 
 
@@ -87,7 +93,7 @@ def _collect_editor() -> ResumeData:
         lines = [line.strip() for line in block.splitlines() if line.strip()]
         if not lines:
             continue
-        fields = [field.strip() for field in lines[0].split("|")]
+        fields = [field.strip() for field in lines[0].split("|", 3)]
         fields.extend([""] * (4 - len(fields)))
         bullets = [line.lstrip("-• ").strip() for line in lines[1:] if line.lstrip("-• ").strip()]
         jobs.append(Job(company=fields[0], title=fields[1], dates=fields[2], project=fields[3], bullets=bullets))
@@ -99,6 +105,15 @@ def _collect_editor() -> ResumeData:
             fields.extend([""] * (3 - len(fields)))
             education.append(Education(degree=fields[0], institution=fields[1], year=fields[2]))
 
+    additional_sections = []
+    for block in st.session_state.additional_sections.split("\n\n"):
+        lines = [line.strip() for line in block.splitlines() if line.strip()]
+        if not lines:
+            continue
+        additional_sections.append(
+            ExtraSection(title=lines[0].strip("[]: "), items=lines[1:])
+        )
+
     return ResumeData(
         name=st.session_state.name.strip(),
         summary=[line.strip().lstrip("-• ") for line in st.session_state.summary.splitlines() if line.strip()],
@@ -106,6 +121,7 @@ def _collect_editor() -> ResumeData:
         experience=jobs,
         certifications=[line.strip().lstrip("-• ") for line in st.session_state.certifications.splitlines() if line.strip()],
         education=education,
+        additional_sections=additional_sections,
     )
 
 
@@ -131,6 +147,11 @@ def main() -> None:
         return
 
     st.subheader("Review extracted content")
+    original = st.session_state.resume_data
+    for message in original.validation_warnings:
+        st.warning(message)
+    for message in original.validation_errors:
+        st.error(message)
     st.text_input("Candidate name", key="name")
     left, right = st.columns(2)
     with left:
@@ -143,11 +164,33 @@ def main() -> None:
             key="experience", height=360,
         )
         st.text_area("Education — Degree | Institution | Year", key="education", height=130)
+        st.text_area(
+            "Additional sections — [Heading] followed by one item per line",
+            key="additional_sections", height=130,
+        )
 
-    if st.button("Generate DOCX + PDF", type="primary", use_container_width=True):
+    override = False
+    if original.validation_errors:
+        override = st.checkbox(
+            "I reviewed and corrected every flagged field; allow export.",
+            help="Export is blocked by default when extraction may have lost or merged data.",
+        )
+
+    if st.button(
+        "Generate DOCX + PDF", type="primary", use_container_width=True,
+        disabled=bool(original.validation_errors) and not override,
+    ):
         with st.spinner("Applying the template and creating downloads…"):
             try:
-                st.session_state.outputs = build_outputs(_collect_editor())
+                edited = _collect_editor()
+                errors, warnings = validate(edited)
+                if errors:
+                    for message in errors:
+                        st.error(message)
+                    return
+                for message in warnings:
+                    st.warning(message)
+                st.session_state.outputs = build_outputs(edited)
             except PdfExportError as exc:
                 st.error(str(exc))
             except Exception as exc:

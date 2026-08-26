@@ -9,7 +9,7 @@ silently losing a candidate's experience is not.
 import re
 
 from .extract import Line
-from .model import Education, Job, ResumeData, SkillGroup
+from .model import Education, ExtraSection, Job, ResumeData, SkillGroup
 
 _SECTION_ALIASES: dict[str, str] = {}
 
@@ -68,12 +68,15 @@ _register(
     "qualification", "qualifications", "educational background", "education details",
 )
 _register(
-    "ignore",
+    "additional",
     "achievements", "accomplishments", "awards", "awards and honors", "honors",
     "hobbies", "interests", "hobbies and interests", "extracurricular activities",
-    "activities", "languages", "languages known", "personal details",
-    "personal information", "declaration", "references", "reference",
-    "publications", "patents", "volunteer experience", "strengths",
+    "activities", "languages", "languages known", "publications", "patents",
+    "volunteer experience", "strengths",
+)
+_register(
+    "ignore",
+    "personal details", "personal information", "declaration", "references", "reference",
     "contact", "contact details", "contact information",
     "education and certifications", "education & certifications",
 )
@@ -227,6 +230,11 @@ def parse(lines: list[Line], fallback_name: str = "") -> ResumeData:
     data.experience += _parse_earlier_career(merged.get("earlier_career", []))
     data.certifications = _parse_simple_list(merged.get("certifications", []))
     data.education = _parse_education(merged.get("education", []))
+    data.additional_sections = [
+        ExtraSection(title=title, items=_parse_simple_list(body))
+        for section, title, body in blocks
+        if section == "additional" and body
+    ]
 
     data.dropped_sections = sorted({
         title for section, title, body in blocks if section == "ignore" and body and title
@@ -245,6 +253,7 @@ def _parse_name(preamble: list[Line], fallback: str) -> str:
     for idx, line in enumerate(preamble[:8]):
         raw = line.text.strip()
         candidate = re.split(r"[|,/–—]| - ", raw)[0].strip()
+        candidate = re.split(r"\s+(?=shi\S*)", candidate, maxsplit=1, flags=re.I)[0].strip()
         candidate = re.sub(r"^(name|mr|mrs|ms|dr)\.?\s*[:\-]?\s*", "", candidate, flags=re.I).strip()
         low = candidate.lower()
         if not candidate or any(w in low for w in _NAME_STOPWORDS):
@@ -363,7 +372,12 @@ def _parse_experience(lines: list[Line]) -> list[Job]:
             prev = lines[start - 1]
             if not prev.is_bullet and (n == 0 or start - 1 > header_idx[n - 1]):
                 remainder = prev.text.strip()
-        job.company = remainder
+        if "|" in remainder:
+            title, company = (part.strip() for part in remainder.split("|", 1))
+            job.title = title
+            job.company = company
+        else:
+            job.company = remainder
 
         _fill_job_body(job, lines[start + 1: end])
 
@@ -375,6 +389,7 @@ def _parse_experience(lines: list[Line]) -> list[Job]:
 
 def _fill_job_body(job: Job, body: list[Line]) -> None:
     pending: list[Line] = []
+    context_label = ""
     for line in body:
         text = line.text.strip()
         if _ROLE_MARKER.match(text):
@@ -382,17 +397,29 @@ def _fill_job_body(job: Job, body: list[Line]) -> None:
         if not line.is_bullet and _PROJECT_PREFIX.match(text) and not job.project:
             job.project = _PROJECT_PREFIX.sub("", text).strip()
             continue
+        if not line.is_bullet and line.bold and len(text.split()) <= 8:
+            if not job.title and not job.bullets and _looks_like_title(text):
+                job.title = text
+            else:
+                context_label = text.rstrip(":")
+            continue
         if (
-            not line.is_bullet
-            and not job.title
-            and not job.bullets
-            and len(text.split()) <= 8
-            and _looks_like_title(text)
+            not line.is_bullet and not job.title and not job.bullets
+            and len(text.split()) <= 8 and _looks_like_title(text)
         ):
             job.title = text
             continue
         if line.is_bullet:
+            if context_label:
+                text = f"{context_label}: {text}"
+                context_label = ""
             job.bullets.append(text)
+        elif job.bullets:
+            previous = job.bullets[-1]
+            if previous.endswith("-") and text and text[0].islower():
+                job.bullets[-1] = previous + text
+            else:
+                job.bullets[-1] = f"{previous} {text}".strip()
         else:
             pending.append(line)
 
@@ -405,6 +432,8 @@ def _fill_job_body(job: Job, body: list[Line]) -> None:
             job.bullets.extend(s.strip() for s in _SENTENCE_SPLIT.split(text) if s.strip())
         else:
             job.bullets.append(text)
+    if context_label:
+        job.bullets.append(context_label)
 
 
 def _parse_projects(lines: list[Line]) -> list[Job]:

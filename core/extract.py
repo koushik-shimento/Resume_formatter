@@ -6,10 +6,13 @@ its font size.
 """
 
 import re
+import shutil
+import subprocess
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-BULLET_CHARS = "\u2022\u25cf\u25aa\u25e6\u2023\u2043\u00b7\u2219\uf0b7\uf0a7\uf0d8\u2013\u2014-*>"
+BULLET_CHARS = "\u2022\u25cf\u25aa\u25e6\u2023\u2043\u00b7\u2219\uf0b7\uf0a7\uf0d8\u2013\u2014-*+>"
 _BULLET_RE = re.compile(rf"^\s*[{re.escape(BULLET_CHARS)}]+\s+")
 
 
@@ -129,6 +132,44 @@ def _from_pdf(path: str) -> list[Line]:
                 bold = all(("bold" in f.lower() or "black" in f.lower()) for f in fonts)
                 sizes = [w.get("size") for w in row if w.get("size")]
                 lines.append(Line(text, False, bold, max(sizes) if sizes else None))
+    if sum(len(line.text) for line in lines) < 20:
+        return _from_scanned_pdf(path)
+    return lines
+
+
+def _from_scanned_pdf(path: str) -> list[Line]:
+    """OCR image-only or outlined-text PDFs when no text layer is available."""
+    pdftoppm = shutil.which("pdftoppm")
+    tesseract = shutil.which("tesseract")
+    if not pdftoppm or not tesseract:
+        raise UnsupportedFormat(
+            "This PDF has no readable text layer and needs OCR. "
+            "Install Poppler and Tesseract, then try again."
+        )
+    lines: list[Line] = []
+    with tempfile.TemporaryDirectory(prefix="resume-ocr-") as directory:
+        prefix = str(Path(directory) / "page")
+        subprocess.run(
+            [pdftoppm, "-png", "-r", "220", path, prefix],
+            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+        )
+        for image in sorted(Path(directory).glob("page-*.png")):
+            result = subprocess.run(
+                [tesseract, str(image), "stdout", "--psm", "6"],
+                check=True, capture_output=True, text=True,
+            )
+            for raw in result.stdout.splitlines():
+                text = raw.strip()
+                if not text:
+                    continue
+                letters = [char for char in text if char.isalpha()]
+                uppercase_ratio = (
+                    sum(char.isupper() for char in letters) / len(letters)
+                    if letters else 0
+                )
+                lines.append(Line(text, False, uppercase_ratio >= 0.8, None))
+    if not lines:
+        raise UnsupportedFormat("OCR could not find readable resume text in this PDF.")
     return lines
 
 

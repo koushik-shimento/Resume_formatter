@@ -27,6 +27,12 @@ class SkillGroup:
 
 
 @dataclass
+class ExtraSection:
+    title: str = ""
+    items: list[str] = field(default_factory=list)
+
+
+@dataclass
 class ResumeData:
     """Canonical resume payload shared by parsers, LLM normalization, and renderers."""
 
@@ -36,12 +42,15 @@ class ResumeData:
     experience: list[Job] = field(default_factory=list)
     certifications: list[str] = field(default_factory=list)
     education: list[Education] = field(default_factory=list)
+    additional_sections: list[ExtraSection] = field(default_factory=list)
     # Source sections that do not map into the selected output format.
     dropped_sections: list[str] = field(default_factory=list)
     # How the final structure was produced: rule-based, llm, or llm_fallback.
     normalization_method: str = "rule-based"
     # Human-readable note for the review UI; empty when no fallback/error occurred.
     normalization_note: str = ""
+    validation_errors: list[str] = field(default_factory=list)
+    validation_warnings: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -78,7 +87,16 @@ class ResumeData:
                 )
                 for e in d.get("education", [])
             ],
+            additional_sections=[
+                ExtraSection(
+                    title=str(section.get("title", "")),
+                    items=[str(x) for x in section.get("items", [])],
+                )
+                for section in d.get("additional_sections", [])
+            ],
             dropped_sections=[str(x) for x in d.get("dropped_sections", [])],
             normalization_method=str(d.get("normalization_method", "rule-based")),
             normalization_note=str(d.get("normalization_note", "")),
+            validation_errors=[str(x) for x in d.get("validation_errors", [])],
+            validation_warnings=[str(x) for x in d.get("validation_warnings", [])],
         )

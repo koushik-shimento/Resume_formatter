@@ -5,6 +5,33 @@ from core.parser import parse
 
 
 class ParserTests(unittest.TestCase):
+    def test_compact_pdf_roles_keep_company_title_wrapping_and_languages(self):
+        lines = [
+            Line("RADING RICHARD KANGBA", bold=True, size=17),
+            Line("PROFESSIONAL SUMMARY", bold=True, size=10),
+            Line("Experienced engineer."),
+            Line("PROFESSIONAL EXPERIENCE", bold=True, size=10),
+            Line("AI Developer | LinkedERP Jun 2026 - Present"),
+            Line("AI-Powered ERP Advisory Platform: Building a product", is_bullet=True),
+            Line("that recommends an ERP platform."),
+            Line("Software Engineer | Societe Generale Jun 2021 - Jun 2026"),
+            Line("Microservices & API Engineering", bold=True, size=9),
+            Line("Architected Spring Boot services", is_bullet=True),
+            Line("under high concurrency."),
+            Line("LANGUAGES", bold=True, size=10),
+            Line("English (Fluent) • Hindi (Fluent)"),
+        ]
+        data = parse(lines)
+        self.assertEqual((data.experience[0].title, data.experience[0].company), ("AI Developer", "LinkedERP"))
+        self.assertEqual(data.experience[0].bullets, ["AI-Powered ERP Advisory Platform: Building a product that recommends an ERP platform."])
+        self.assertEqual((data.experience[1].title, data.experience[1].company), ("Software Engineer", "Societe Generale"))
+        self.assertEqual(data.experience[1].bullets, ["Microservices & API Engineering: Architected Spring Boot services under high concurrency."])
+        self.assertEqual(data.additional_sections[0].title, "LANGUAGES")
+
+    def test_ocr_header_discards_logo_text(self):
+        data = parse([Line("Asit Kumar Mandal SHIM=NTO X"), Line("SUMMARY", bold=True), Line("Experienced architect", is_bullet=True)])
+        self.assertEqual(data.name, "Asit Kumar Mandal")
+
     def test_parses_branded_project_card_resume(self):
         lines = [
             Line("ASIT KUMAR MANDAL", bold=True, size=23),

@@ -5,7 +5,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PORT=10000
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libreoffice-writer fonts-liberation \
+    && apt-get install -y --no-install-recommends libreoffice-writer fonts-liberation poppler-utils tesseract-ocr \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
